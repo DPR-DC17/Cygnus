@@ -782,7 +782,21 @@ select.finp{cursor:pointer}
 
 <!-- IPO CALENDAR -->
 <div class="panel" id="panel-ipo">
-  <div class="ph"><h1>IPO Calendar</h1><p>Upcoming & recent IPOs with AI analysis and valuation outlook</p></div>
+  <div class="ph"><h1>IPO Calendar</h1><p>Upcoming IPOs for the next 6 months with AI analysis and valuation outlook</p></div>
+
+  <!-- Month filter tabs -->
+  <div class="stabs" id="ipo-month-tabs" style="margin-bottom:14px;flex-wrap:wrap"></div>
+
+  <!-- View toggle -->
+  <div style="display:flex;gap:8px;margin-bottom:14px;align-items:center">
+    <button id="ipo-view-list" class="btn" onclick="setIPOView('list')" style="font-size:11px;padding:5px 14px">☰ List</button>
+    <button id="ipo-view-cal" class="bto" onclick="setIPOView('calendar')" style="font-size:11px;padding:5px 14px">📅 Calendar</button>
+    <div style="flex:1"></div>
+    <a href="https://www.nasdaq.com/market-activity/ipos" target="_blank" class="bto" style="font-size:10px;padding:4px 12px">Nasdaq Live ↗</a>
+    <a href="https://finance.yahoo.com/calendar/ipo" target="_blank" class="bto" style="font-size:10px;padding:4px 12px">Yahoo Finance ↗</a>
+    <a href="https://www.marketwatch.com/tools/ipo-calendar" target="_blank" class="bto" style="font-size:10px;padding:4px 12px">MarketWatch ↗</a>
+  </div>
+
   <div id="ipo-list"><div class="ld-wrap"><div class="dots"><span></span><span></span><span></span></div><p>Loading IPO calendar...</p></div></div>
 </div>
 
@@ -1709,7 +1723,8 @@ function getTTL(u){
   if(l.includes('news')||l.includes('insight'))return CACHE_TTL.news;
   if(l.includes('guru')||l.includes('billionaire'))return CACHE_TTL.portfolio;
   if(l.includes('famous investor profile'))return CACHE_TTL.portfolio;
-  if(l.includes('calendar')||l.includes('earning')||l.includes('ipo'))return CACHE_TTL.calendar;
+  if(l.includes('calendar')||l.includes('earning'))return CACHE_TTL.calendar;
+  if(l.includes('ipo'))return 0; // never cache IPOs
   return CACHE_TTL.default;
 }
 
@@ -2276,73 +2291,190 @@ async function loadGurus(){
 }
 
 // ============ IPO CALENDAR ============
-async function loadIPOs(){
-  document.getElementById('ipo-list').innerHTML=`<div class="ld-wrap"><div class="dots"><span></span><span></span><span></span></div><p>Loading IPO calendar...</p></div>`;
+// ============ IPO CALENDAR ============
+let _ipoData=[];
+let _ipoView='list';
+let _ipoMonth='all';
 
-  // Try Alpha Vantage IPO Calendar first
+function setIPOView(view){
+  _ipoView=view;
+  document.getElementById('ipo-view-list').className=view==='list'?'btn':'bto';
+  document.getElementById('ipo-view-cal').className=view==='calendar'?'btn':'bto';
+  document.getElementById('ipo-view-list').style.cssText='font-size:11px;padding:5px 14px';
+  document.getElementById('ipo-view-cal').style.cssText='font-size:11px;padding:5px 14px';
+  renderIPOs();
+}
+
+function setIPOMonth(month){
+  _ipoMonth=month;
+  // Update tab styles
+  document.querySelectorAll('#ipo-month-tabs .stab').forEach(t=>{
+    t.classList.toggle('act',t.dataset.month===month);
+  });
+  renderIPOs();
+}
+
+function renderIPOMonthTabs(ipos){
+  const months={};
+  ipos.forEach(ip=>{
+    const m=ip.month||'Unknown';
+    if(!months[m])months[m]=0;
+    months[m]++;
+  });
+  const tabsEl=document.getElementById('ipo-month-tabs');
+  tabsEl.innerHTML=`<div class="stab act" data-month="all" onclick="setIPOMonth('all')">All (${ipos.length})</div>`+
+    Object.entries(months).map(([m,count])=>
+      `<div class="stab" data-month="${m}" onclick="setIPOMonth('${m}')">${m} (${count})</div>`
+    ).join('');
+}
+
+function renderIPOs(){
+  const filtered=_ipoMonth==='all'?_ipoData:_ipoData.filter(ip=>ip.month===_ipoMonth);
+  const el=document.getElementById('ipo-list');
+  if(!filtered.length){el.innerHTML='<div class="empty"><p>No IPOs found for this period.</p></div>';return;}
+
+  if(_ipoView==='calendar'){
+    // Group by month for calendar view
+    const byMonth={};
+    filtered.forEach(ip=>{
+      const m=ip.month||'Unknown';
+      if(!byMonth[m])byMonth[m]=[];
+      byMonth[m].push(ip);
+    });
+    el.innerHTML=Object.entries(byMonth).map(([month,ipos])=>`
+      <div style="margin-bottom:24px">
+        <div style="font-size:13px;font-weight:800;color:var(--gr);margin-bottom:12px;padding-bottom:8px;border-bottom:2px solid rgba(0,229,168,.2)">
+          📅 ${month}
+          <span style="font-size:10px;color:var(--t3);font-weight:400;margin-left:8px">${ipos.length} IPO${ipos.length>1?'s':''}</span>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px">
+          ${ipos.map(ip=>renderIPOCard(ip,'compact')).join('')}
+        </div>
+      </div>`).join('');
+  } else {
+    // List view
+    el.innerHTML=filtered.map(ip=>renderIPOCard(ip,'full')).join('');
+  }
+}
+
+function renderIPOCard(ip,mode){
+  const searchUrl=`https://www.google.com/search?q=${encodeURIComponent(ip.company+' IPO 2026')}`;
+  const nasdaqUrl=`https://www.nasdaq.com/market-activity/ipos`;
+  const yahooUrl=`https://finance.yahoo.com/quote/${ip.ticker||ip.company.replace(/\s+/g,'-')}`;
+
+  if(mode==='compact'){
+    return`<div class="ipoc" style="margin-bottom:0">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px">
+        <div>
+          <div style="font-weight:700;font-size:13px">${ip.company}</div>
+          <div style="font-size:10px;color:var(--t3)">${ip.ticker?`(${ip.ticker}) · `:''} ${ip.date||'TBD'}</div>
+        </div>
+        <span class="pill ${ip.aiOutlook||'neutral'}" style="font-size:9px">${slab(ip.aiOutlook||'neutral')}</span>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+        ${ip.priceRange?`<span style="font-size:10px;color:var(--t2)">💰 ${ip.priceRange}</span>`:''}
+        ${ip.sector?`<span style="font-size:10px;color:var(--t2)">🏭 ${ip.sector}</span>`:''}
+        ${ip.aiScore?`<span style="font-size:10px;color:${sc(ip.aiScore)}">⭐ ${ip.aiScore}</span>`:''}
+      </div>
+      <div style="display:flex;gap:6px">
+        <a href="${searchUrl}" target="_blank" class="bto" style="font-size:9px;padding:2px 8px;flex:1;text-align:center">🔍 Research</a>
+        <a href="${yahooUrl}" target="_blank" class="bto" style="font-size:9px;padding:2px 8px;flex:1;text-align:center">📈 Yahoo</a>
+      </div>
+    </div>`;
+  }
+
+  return`<div class="ipoc">
+    <div class="ipoch">
+      <div style="flex:1">
+        <div class="ipo-t">${ip.company} ${ip.ticker?`<span class="mono" style="font-size:11px;color:var(--gr)">(${ip.ticker})</span>`:''}</div>
+        <div class="ipo-d">${[ip.exchange,ip.date,ip.sector].filter(Boolean).join(' · ')}</div>
+      </div>
+      <div style="text-align:right;flex-shrink:0">
+        <span class="pill ${ip.aiOutlook||'neutral'}" style="display:inline-block;margin-bottom:4px">${slab(ip.aiOutlook||'neutral')}</span>
+        <div class="mono" style="font-size:10px;color:var(--t3)">${(ip.status||'upcoming').toUpperCase()}</div>
+      </div>
+    </div>
+    <div class="ipo-stats">
+      ${ip.priceRange?`<div class="ipo-s"><div class="ipo-sl">Price Range</div><div class="ipo-sv">${ip.priceRange}</div></div>`:''}
+      ${ip.aum?`<div class="ipo-s"><div class="ipo-sl">Raising</div><div class="ipo-sv">${ip.aum}</div></div>`:''}
+      ${ip.aiScore?`<div class="ipo-s"><div class="ipo-sl">AI Score</div><div class="ipo-sv" style="color:${sc(ip.aiScore)}">${ip.aiScore}</div></div>`:''}
+      ${ip.lead?`<div class="ipo-s"><div class="ipo-sl">Underwriter</div><div class="ipo-sv">${ip.lead}</div></div>`:''}
+    </div>
+    ${ip.thesis?`<div class="ipo-ai">${ip.thesis}</div>`:''}
+    <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap">
+      <a href="${searchUrl}" target="_blank" class="bto" style="font-size:10px;padding:3px 10px">🔍 Google Research</a>
+      <a href="${yahooUrl}" target="_blank" class="bto" style="font-size:10px;padding:3px 10px">📈 Yahoo Finance</a>
+      <a href="${nasdaqUrl}" target="_blank" class="bto" style="font-size:10px;padding:3px 10px">📊 Nasdaq</a>
+      <a href="https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&type=S-1&dateb=&owner=include&count=40" target="_blank" class="bto" style="font-size:10px;padding:3px 10px">📋 SEC Filing</a>
+    </div>
+  </div>`;
+}
+
+async function loadIPOs(){
+  // Clear IPO cache
+  Object.keys(sessionStorage).filter(k=>k.startsWith('ps_cache_')).forEach(k=>{
+    try{const v=sessionStorage.getItem(k);if(v&&(v.includes('ipo')||v.includes('IPO')))sessionStorage.removeItem(k);}catch(e){}
+  });
+
+  document.getElementById('ipo-list').innerHTML=`<div class="ld-wrap"><div class="dots"><span></span><span></span><span></span></div><p>Loading IPO calendar...</p></div>`;
+  document.getElementById('ipo-month-tabs').innerHTML='';
+
+  // Try Alpha Vantage first
   const avKey=KEYS.alphavantage();
   if(avKey){
     try{
       const r=await fetch(`https://www.alphavantage.co/query?function=IPO_CALENDAR&apikey=${avKey}`);
       const text=await r.text();
-      // AV returns CSV for this endpoint
-      const lines=text.trim().split('\n').slice(1).filter(Boolean).slice(0,12);
+      const lines=text.trim().split('\n').slice(1).filter(Boolean).slice(0,20);
       if(lines.length>0){
-        const ipos=lines.map(line=>{
-          const [symbol,name,ipoDate,priceRangeLow,priceRangeHigh,currency,exchange,status]=line.split(',');
-          return {symbol,name,ipoDate,priceRange:priceRangeLow&&priceRangeHigh?`$${priceRangeLow}-$${priceRangeHigh}`:'TBD',exchange,status};
+        _ipoData=lines.map(line=>{
+          const parts=line.split(',');
+          const [symbol,name,ipoDate,priceRangeLow,priceRangeHigh,currency,exchange,status]=parts;
+          const d=new Date(ipoDate);
+          return{
+            company:name||'—',ticker:symbol,date:ipoDate,
+            month:isNaN(d)?'Upcoming':d.toLocaleString('default',{month:'long',year:'numeric'}),
+            priceRange:priceRangeLow&&priceRangeHigh?`$${parseFloat(priceRangeLow).toFixed(0)}-$${parseFloat(priceRangeHigh).toFixed(0)}`:'TBD',
+            exchange:exchange||'—',status:status||'upcoming',
+            aiOutlook:'neutral',aiScore:null,sector:'',thesis:'',aum:'',lead:''
+          };
         });
-        document.getElementById('ipo-list').innerHTML=`
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-            <span style="font-size:10px;color:var(--gr)">✓ Live data via Alpha Vantage</span>
-            <a href="https://www.nasdaq.com/market-activity/ipos" target="_blank" class="bto" style="font-size:10px;padding:3px 10px">View on Nasdaq ↗</a>
-          </div>`+
-          ipos.map(ip=>`
-          <div class="ipoc">
-            <div class="ipoch">
-              <div>
-                <div class="ipo-t">${ip.name||'—'} <span class="mono" style="font-size:11px;color:var(--t2)">${ip.symbol?'('+ip.symbol+')':''}</span></div>
-                <div class="ipo-d">${ip.exchange||'—'} · ${ip.ipoDate||'TBD'}</div>
-              </div>
-              <div class="mono" style="font-size:11px;font-weight:700;color:var(--ye)">${(ip.status||'upcoming').toUpperCase()}</div>
-            </div>
-            <div class="ipo-stats">
-              ${ip.priceRange&&ip.priceRange!=='TBD'?`<div class="ipo-s"><div class="ipo-sl">Price Range</div><div class="ipo-sv">${ip.priceRange}</div></div>`:''}
-            </div>
-          </div>`).join('');
+        renderIPOMonthTabs(_ipoData);
+        renderIPOs();
         return;
       }
     }catch(e){console.log('AV IPO failed:',e.message);}
   }
 
-  // Fallback to AI
+  // AI fallback — 6 months of IPOs
   try{
-    const ipos=await cj(`10 notable upcoming or recent IPOs in 2026. Today is ${new Date().toLocaleDateString()}.`,
-      'Return JSON array: [{"company":"Name","ticker":"X","exchange":"NYSE|NASDAQ","date":"Mon DD, 2026","status":"upcoming|priced","priceRange":"$X-$Y","sector":"s","aum":"$XB raised","aiOutlook":"bull|bear|neutral","aiScore":number,"thesis":"2 sentences on investment case"}]',1500);
-    document.getElementById('ipo-list').innerHTML=`
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-        <span style="font-size:10px;color:var(--ye)">⚠ AI-estimated data</span>
-        <a href="https://www.nasdaq.com/market-activity/ipos" target="_blank" class="bto" style="font-size:10px;padding:3px 10px">View Live Calendar ↗</a>
-      </div>`+
-      ipos.map(ip=>`
-      <div class="ipoc">
-        <div class="ipoch">
-          <div><div class="ipo-t">${ip.company} <span class="mono" style="font-size:11px;color:var(--t2)">(${ip.ticker})</span></div>
-          <div class="ipo-d">${ip.exchange} · ${ip.date} · ${ip.sector}</div></div>
-          <div style="text-align:right">
-            <span class="pill ${ip.aiOutlook}" style="display:inline-block;margin-bottom:4px">${slab(ip.aiOutlook)}</span>
-            <div class="mono" style="font-size:11px;color:var(--t2)">${ip.status.toUpperCase()}</div>
-          </div>
-        </div>
-        <div class="ipo-stats">
-          ${ip.priceRange?`<div class="ipo-s"><div class="ipo-sl">Price Range</div><div class="ipo-sv">${ip.priceRange}</div></div>`:''}
-          ${ip.aum?`<div class="ipo-s"><div class="ipo-sl">Raised</div><div class="ipo-sv">${ip.aum}</div></div>`:''}
-          <div class="ipo-s"><div class="ipo-sl">AI Score</div><div class="ipo-sv" style="color:${sc(ip.aiScore)}">${ip.aiScore}</div></div>
-        </div>
-        <div class="ipo-ai">${ip.thesis}</div>
-      </div>`).join('');
+    const now=new Date();
+    const months=[];
+    for(let i=0;i<6;i++){
+      const d=new Date(now.getFullYear(),now.getMonth()+i,1);
+      months.push(d.toLocaleString('default',{month:'long',year:'numeric'}));
+    }
+    const raw=await callAI(
+      `List upcoming IPOs for these 6 months: ${months.join(', ')}. Today is ${now.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})}. Include 3-4 IPOs per month where possible. Only include ${now.getFullYear()} IPOs.`,
+      `Respond ONLY with a JSON array: [{"company":"Name","ticker":"X or TBD","exchange":"NYSE|NASDAQ","date":"Mon DD YYYY","month":"Month YYYY","status":"upcoming|priced","priceRange":"$X-$Y or TBD","sector":"Technology","aum":"$XM raised or TBD","aiOutlook":"bull|bear|neutral","aiScore":number 1-100,"lead":"Goldman Sachs or TBD","thesis":"2 sentence investment case"}]`,
+      [,],2500
+    );
+    const cleaned=raw.replace(/```json|```/g,'').trim();
+    _ipoData=JSON.parse(cleaned);
+    if(!Array.isArray(_ipoData))_ipoData=[_ipoData];
+    renderIPOMonthTabs(_ipoData);
+    renderIPOs();
+    // Show AI disclaimer
+    document.getElementById('ipo-list').innerHTML=`<div style="background:var(--s2);border:1px solid rgba(245,192,48,.2);border-radius:8px;padding:8px 14px;margin-bottom:12px;font-size:10px;color:var(--ye)">⚠ AI-estimated data — verify dates on <a href="https://www.nasdaq.com/market-activity/ipos" target="_blank" style="color:var(--ye)">Nasdaq</a> or <a href="https://finance.yahoo.com/calendar/ipo" target="_blank" style="color:var(--ye)">Yahoo Finance</a></div>`+document.getElementById('ipo-list').innerHTML;
   }catch(e){
-    document.getElementById('ipo-list').innerHTML=`<div class="empty"><p>Could not load IPO data.</p><a href="https://www.nasdaq.com/market-activity/ipos" target="_blank" class="bto" style="margin-top:10px;display:inline-block">View Live on Nasdaq ↗</a></div>`;
+    document.getElementById('ipo-list').innerHTML=`<div class="empty">
+      <p style="color:var(--re)">Could not load IPO data.</p>
+      <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+        <a href="https://www.nasdaq.com/market-activity/ipos" target="_blank" class="btn" style="font-size:11px">📊 Nasdaq IPO Calendar</a>
+        <a href="https://finance.yahoo.com/calendar/ipo" target="_blank" class="bto" style="font-size:11px">📈 Yahoo Finance</a>
+        <a href="https://www.marketwatch.com/tools/ipo-calendar" target="_blank" class="bto" style="font-size:11px">📰 MarketWatch</a>
+      </div>
+    </div>`;
   }
 }
 
